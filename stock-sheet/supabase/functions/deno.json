@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "jsr:": "https://api.jsr.io/",
+    "npm:": "https://npm.jsr.io/"
+  }
+}
