@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/context/AuthContext';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { useArchiveSheet, useLockSheet, useUnlockSheet } from '@/hooks/useSheet';
-import { useUserRoleInStore } from '@/hooks/useStores';
+import { useStoreMembership, useTemplateRoleOverrides } from '@/hooks/useStores';
 import { SheetDataGrid } from '@/components/SheetDataGrid';
 import { getStockSheetById } from '@/db/stock-sheets';
 import { getSheetTemplateById } from '@/db/sheet-templates';
@@ -23,10 +23,12 @@ import { getSheetEntries } from '@/db/sheet-entries';
 import { getStoreById } from '@/db/stores';
 import { batchSaveEntries } from '@/lib/api/sheets';
 import { extractTemplateColumns, type TemplateColumn } from '@/lib/api/sheetTemplates';
+import { getTemplatePermissions } from '@/lib/documentAccess';
+import { hasPermission } from '@/lib/permissions';
 import { printSheet } from '@/lib/print/sheet-printer';
 import type { Database } from '@/types/supabase';
 
-type StockSheet = Database['public']['Tables']['stock_sheets']['Row'];
+type StockSheet = Database['public']['Tables']['sheet_instances']['Row'];
 type SheetTemplate = Database['public']['Tables']['sheet_templates']['Row'];
 type SheetEntry = Database['public']['Tables']['sheet_entries']['Row'];
 type Product = Database['public']['Tables']['products']['Row'];
@@ -73,7 +75,14 @@ export default function SheetDetailScreen() {
 	const [storeName, setStoreName] = useState('');
 	const [showAddProductModal, setShowAddProductModal] = useState(false);
 	const [newProductName, setNewProductName] = useState('');
-	const { data: storeRole } = useUserRoleInStore(sheet?.store_id ?? null, user?.id ?? null);
+	const { data: storeMembership, isLoading: isMembershipLoading } = useStoreMembership(
+		sheet?.store_id ?? null,
+		user?.id ?? null
+	);
+	const {
+		data: templateOverrides,
+		isLoading: isOverridesLoading,
+	} = useTemplateRoleOverrides(sheet?.store_id ?? null);
 
 	React.useEffect(() => {
 		loadSheetData();
@@ -140,6 +149,14 @@ export default function SheetDetailScreen() {
 		return extractTemplateColumns(template);
 	};
 
+	const templatePermissions = React.useMemo(() => {
+		return getTemplatePermissions(
+			sheet?.sheet_template_id ?? '',
+			storeMembership ?? null,
+			templateOverrides ?? []
+		);
+	}, [sheet?.sheet_template_id, storeMembership, templateOverrides]);
+
 	const handleValueChange = (productId: string, columnId: string, value: string) => {
 		const key = buildEntryKey(productId, columnId);
 		setEditedValues((prev) => ({
@@ -149,7 +166,7 @@ export default function SheetDetailScreen() {
 	};
 
 	const handleSave = async () => {
-		if (!id) return;
+		if (!id || !hasPermission(templatePermissions, 'editDocuments') || sheet?.is_locked) return;
 
 		try {
 			setSaving(true);
@@ -285,7 +302,7 @@ export default function SheetDetailScreen() {
 	};
 
 	const handleToggleLock = async () => {
-		if (!sheet) return;
+		if (!sheet || !hasPermission(templatePermissions, 'lockDocuments')) return;
 
 		try {
 			setError('');
@@ -301,7 +318,7 @@ export default function SheetDetailScreen() {
 	};
 
 	const handleArchiveSheet = () => {
-		if (!sheet) return;
+		if (!sheet || !hasPermission(templatePermissions, 'archiveDocuments')) return;
 
 		Alert.alert(
 			'Archive Sheet',
@@ -333,13 +350,41 @@ export default function SheetDetailScreen() {
 		);
 	}
 
+	if (sheet && (isMembershipLoading || isOverridesLoading || !storeMembership)) {
+		return (
+			<SafeAreaView style={styles.container}>
+				<ActivityIndicator size="large" color="#007AFF" style={styles.loader} />
+			</SafeAreaView>
+		);
+	}
+
 	const columns = getColumns();
-	const canAddProducts = Boolean(sheet && !sheet.is_locked);
-	const canManageSheet = storeRole === 'manager';
+	const canViewSheet = hasPermission(templatePermissions, 'viewDocuments');
+	const canEditSheet = hasPermission(templatePermissions, 'editDocuments') && !sheet?.is_locked;
+	const canAddProducts = Boolean(sheet && canEditSheet);
+	const canManageLockState = hasPermission(templatePermissions, 'lockDocuments');
+	const canArchiveSheet = hasPermission(templatePermissions, 'archiveDocuments');
+	const canManageSheet = canManageLockState || canArchiveSheet;
 	const isSheetActionPending =
 		lockSheetMutation.isPending ||
 		unlockSheetMutation.isPending ||
 		archiveSheetMutation.isPending;
+
+	if (!canViewSheet) {
+		return (
+			<SafeAreaView style={styles.container}>
+				<View style={styles.emptyContainer}>
+					<Text style={styles.emptyTitle}>Access Restricted</Text>
+					<Text style={styles.emptyText}>
+						Your current role does not have access to this document.
+					</Text>
+					<TouchableOpacity style={styles.addProductButton} onPress={() => router.replace('/sheet')}>
+						<Text style={styles.addProductButtonText}>Back to Sheets</Text>
+					</TouchableOpacity>
+				</View>
+			</SafeAreaView>
+		);
+	}
 
 	return (
 		<SafeAreaView style={styles.container}>
@@ -357,27 +402,31 @@ export default function SheetDetailScreen() {
 
 			{canManageSheet ? (
 				<View style={styles.managerActions}>
-					<TouchableOpacity
-						style={[styles.managerActionButton, isSheetActionPending && styles.buttonDisabled]}
-						onPress={handleToggleLock}
-						disabled={isSheetActionPending}
-					>
-						<Text style={styles.managerActionText}>
-							{sheet?.is_locked ? 'Unlock Sheet' : 'Lock Sheet'}
-						</Text>
-					</TouchableOpacity>
+					{canManageLockState ? (
+						<TouchableOpacity
+							style={[styles.managerActionButton, isSheetActionPending && styles.buttonDisabled]}
+							onPress={handleToggleLock}
+							disabled={isSheetActionPending}
+						>
+							<Text style={styles.managerActionText}>
+								{sheet?.is_locked ? 'Unlock Sheet' : 'Lock Sheet'}
+							</Text>
+						</TouchableOpacity>
+					) : null}
 
-					<TouchableOpacity
-						style={[
-							styles.managerActionButton,
-							styles.archiveActionButton,
-							isSheetActionPending && styles.buttonDisabled,
-						]}
-						onPress={handleArchiveSheet}
-						disabled={isSheetActionPending}
-					>
-						<Text style={styles.archiveActionText}>Archive Sheet</Text>
-					</TouchableOpacity>
+					{canArchiveSheet ? (
+						<TouchableOpacity
+							style={[
+								styles.managerActionButton,
+								styles.archiveActionButton,
+								isSheetActionPending && styles.buttonDisabled,
+							]}
+							onPress={handleArchiveSheet}
+							disabled={isSheetActionPending}
+						>
+							<Text style={styles.archiveActionText}>Archive Sheet</Text>
+						</TouchableOpacity>
+					) : null}
 				</View>
 			) : null}
 
@@ -387,7 +436,9 @@ export default function SheetDetailScreen() {
 					<Text style={styles.emptyText}>
 						{canAddProducts
 							? 'Add products to this sheet to start entering sheet data.'
-							: 'This sheet is locked, so products can no longer be added.'}
+							: sheet?.is_locked
+								? 'This sheet is locked, so products can no longer be added.'
+								: 'Your role can view this document, but cannot edit it.'}
 					</Text>
 					{canAddProducts ? (
 						<TouchableOpacity
@@ -413,7 +464,7 @@ export default function SheetDetailScreen() {
 						products={products}
 						values={editedValues}
 						onValueChange={handleValueChange}
-						isLocked={!!sheet?.is_locked}
+						isLocked={!canEditSheet}
 						horizontal
 					/>
 				</>
@@ -440,14 +491,20 @@ export default function SheetDetailScreen() {
 				</TouchableOpacity>
 
 				<TouchableOpacity
-					style={[styles.button, styles.saveButton, (saving || sheet?.is_locked) && styles.buttonDisabled]}
+					style={[
+						styles.button,
+						styles.saveButton,
+						(saving || !canEditSheet) && styles.buttonDisabled,
+					]}
 					onPress={handleSave}
-					disabled={saving || sheet?.is_locked || products.length === 0}
+					disabled={saving || !canEditSheet || products.length === 0}
 				>
 					{saving ? (
 						<ActivityIndicator color="#fff" />
 					) : (
-						<Text style={styles.saveButtonText}>{sheet?.is_locked ? 'Locked' : 'Save'}</Text>
+						<Text style={styles.saveButtonText}>
+							{sheet?.is_locked ? 'Locked' : canEditSheet ? 'Save' : 'Read Only'}
+						</Text>
 					)}
 				</TouchableOpacity>
 			</View>

@@ -9,10 +9,9 @@ import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import type { Database } from '@/types/supabase';
+import { getSupabaseConfig } from '@/lib/supabase/config';
 
-const supabaseUrl =
-	process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL || 'http://127.0.0.1:54321';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.REACT_APP_SUPABASE_ANON_KEY || '';
+const { supabaseUrl, supabaseAnonKey } = getSupabaseConfig();
 
 const SECURE_STORE_CHUNK_SIZE = 1800;
 const FALLBACK_SECURE_STORE_KEY = 'supabase.auth.token';

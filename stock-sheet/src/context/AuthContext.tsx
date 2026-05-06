@@ -1,15 +1,22 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '@/lib/auth/client';
 import type { Session, User } from '@supabase/supabase-js';
-
-type Role = 'manager' | 'staff' | null;
+import { supabase } from '@/lib/auth/client';
+import {
+	acceptPendingStoreInvites,
+	fetchUserStoreMemberships,
+	type StoreMembershipRecord,
+} from '@/lib/api/stores';
+import { hasManagementAccess } from '@/lib/permissions';
 
 interface AuthContextValue {
 	session: Session | null;
 	user: User | null;
-	role: Role;
+	role: string | null;
 	storeId: string | null;
+	memberships: StoreMembershipRecord[];
 	isLoading: boolean;
+	hasManagementAccess: boolean;
+	refreshMemberships: () => Promise<void>;
 	signUp: (email: string, password: string) => Promise<void>;
 	signIn: (email: string, password: string) => Promise<void>;
 	signOut: () => Promise<void>;
@@ -17,27 +24,51 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function getPrimaryMembership(memberships: StoreMembershipRecord[]) {
+	const ownerMembership = memberships.find((membership) => membership.roleSlug === 'owner');
+	if (ownerMembership) {
+		return ownerMembership;
+	}
+
+	const managerMembership = memberships.find((membership) =>
+		hasManagementAccess(membership.permissions)
+	);
+	if (managerMembership) {
+		return managerMembership;
+	}
+
+	return memberships[0] ?? null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const [session, setSession] = useState<Session | null>(null);
-	const [role, setRole] = useState<Role>(null);
+	const [role, setRole] = useState<string | null>(null);
 	const [storeId, setStoreId] = useState<string | null>(null);
+	const [memberships, setMemberships] = useState<StoreMembershipRecord[]>([]);
 	const [isLoading, setIsLoading] = useState(true);
+	const [hasManagementAccessFlag, setHasManagementAccessFlag] = useState(false);
 
 	useEffect(() => {
-		// Check for existing session on mount
-		supabase.auth.getSession().then(({ data: { session } }) => {
-			setSession(session);
-			if (session) loadMembership(session.user.id);
-			else setIsLoading(false);
+		supabase.auth.getSession().then(({ data: { session: activeSession } }) => {
+			setSession(activeSession);
+			if (activeSession) {
+				loadMemberships(activeSession.user.id, activeSession.user.email ?? '');
+			} else {
+				setIsLoading(false);
+			}
 		});
 
-		// Listen for auth state changes
-		const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-			setSession(session);
-			if (session) loadMembership(session.user.id);
-			else {
+		const {
+			data: { subscription },
+		} = supabase.auth.onAuthStateChange((_event, activeSession) => {
+			setSession(activeSession);
+			if (activeSession) {
+				loadMemberships(activeSession.user.id, activeSession.user.email ?? '');
+			} else {
 				setRole(null);
 				setStoreId(null);
+				setMemberships([]);
+				setHasManagementAccessFlag(false);
 				setIsLoading(false);
 			}
 		});
@@ -45,28 +76,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		return () => subscription.unsubscribe();
 	}, []);
 
-	async function loadMembership(userId: string) {
+	async function loadMemberships(userId: string, email: string) {
 		try {
-			const { data, error } = await supabase
-				.from('store_members')
-				.select('role, store_id, created_at')
-				.eq('user_id', userId)
-				.order('created_at', { ascending: true });
+			setIsLoading(true);
 
-			if (error) {
-				throw error;
+			if (email) {
+				await acceptPendingStoreInvites(userId, email);
 			}
 
-			const memberships = data ?? [];
-			const defaultMembership = memberships[0] ?? null;
-			const hasManagerAccess = memberships.some((membership) => membership.role === 'manager');
+			const membershipRows = await fetchUserStoreMemberships(userId);
+			const primaryMembership = getPrimaryMembership(membershipRows);
 
-			setRole(hasManagerAccess ? 'manager' : ((defaultMembership?.role as Role) ?? null));
-			setStoreId(defaultMembership?.store_id ?? null);
+			setMemberships(membershipRows);
+			setRole(primaryMembership?.roleSlug ?? null);
+			setStoreId(primaryMembership?.store_id ?? null);
+			setHasManagementAccessFlag(
+				membershipRows.some((membership) => hasManagementAccess(membership.permissions))
+			);
 		} catch (error) {
-			console.error('Failed to load user role:', error);
+			console.error('Failed to load memberships:', error);
 			setRole(null);
 			setStoreId(null);
+			setMemberships([]);
+			setHasManagementAccessFlag(false);
 		} finally {
 			setIsLoading(false);
 		}
@@ -86,6 +118,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		await supabase.auth.signOut();
 		setRole(null);
 		setStoreId(null);
+		setMemberships([]);
+		setHasManagementAccessFlag(false);
+	};
+
+	const refreshMemberships = async () => {
+		if (!session?.user) {
+			return;
+		}
+
+		await loadMemberships(session.user.id, session.user.email ?? '');
 	};
 
 	return (
@@ -95,7 +137,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 				user: session?.user ?? null,
 				role,
 				storeId,
+				memberships,
 				isLoading,
+				hasManagementAccess: hasManagementAccessFlag,
+				refreshMemberships,
 				signUp,
 				signIn,
 				signOut,

@@ -6,7 +6,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/context/AuthContext';
 import { useAnalyseSheet } from '@/hooks/useAnalyseSheet';
-import { useRequireStoreRole } from '@/hooks/useRequireRole';
+import { useRequireStorePermission } from '@/hooks/useRequireRole';
 import { useSaveAnalysisAsTemplate } from '@/hooks/useSheet';
 import type { SheetAnalysisResult } from '@/lib/ai/types';
 import {
@@ -22,7 +22,7 @@ export default function SheetScanScreen() {
 	const router = useRouter();
 	const activeStoreId = typeof storeIdParam === 'string' ? storeIdParam : authStoreId;
 	const activeTemplateId = typeof templateIdParam === 'string' ? templateIdParam : null;
-	useRequireStoreRole(activeStoreId, 'manager');
+	useRequireStorePermission(activeStoreId, 'manageTemplates');
 	const analyseSheet = useAnalyseSheet();
 	const saveTemplate = useSaveAnalysisAsTemplate();
 	const [imageUri, setImageUri] = useState<string | null>(null);

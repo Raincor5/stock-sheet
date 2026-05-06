@@ -1,20 +1,17 @@
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
-import { useUserRoleInStore } from '@/hooks/useStores';
+import { hasPermission, type StoreRolePermissionKey } from '@/lib/permissions';
+import { useStoreMembership } from '@/hooks/useStores';
 
-/**
- * Guard hook to enforce session or global role-based access to screens.
- */
 export function useRequireRole(required: 'authenticated' | 'manager' | 'staff') {
-	const { session, role, isLoading } = useAuth();
+	const { session, hasManagementAccess, isLoading } = useAuth();
 	const pathname = usePathname();
 	const router = useRouter();
 
 	useEffect(() => {
 		if (isLoading) return;
 
-		// No authenticated user
 		if (!session) {
 			if (pathname !== '/login') {
 				router.replace('/login');
@@ -22,38 +19,29 @@ export function useRequireRole(required: 'authenticated' | 'manager' | 'staff') 
 			return;
 		}
 
-		// Any authenticated user can reach authenticated/staff routes.
 		if (required === 'authenticated' || required === 'staff') {
 			return;
 		}
 
-		// Manager routes remain restricted.
-		if (required === 'manager' && role !== 'manager') {
+		if (required === 'manager' && !hasManagementAccess) {
 			if (pathname !== '/sheet') {
 				router.replace('/sheet');
 			}
-			return;
 		}
-	}, [session, role, isLoading, required, pathname, router]);
+	}, [hasManagementAccess, isLoading, pathname, required, router, session]);
 }
 
-/**
- * Guard hook for screens where permissions depend on the selected store.
- */
-export function useRequireStoreRole(
-	storeId: string | null,
-	required: 'manager' | 'staff'
-) {
+export function useRequireStoreRole(storeId: string | null, required: 'manager' | 'staff') {
 	const { session, user, isLoading } = useAuth();
 	const pathname = usePathname();
 	const router = useRouter();
-	const { data: storeRole, isLoading: isStoreRoleLoading } = useUserRoleInStore(
+	const { data: membership, isLoading: isMembershipLoading } = useStoreMembership(
 		storeId,
 		user?.id ?? null
 	);
 
 	useEffect(() => {
-		if (isLoading || isStoreRoleLoading) return;
+		if (isLoading || isMembershipLoading) return;
 
 		if (!session) {
 			if (pathname !== '/login') {
@@ -62,29 +50,67 @@ export function useRequireStoreRole(
 			return;
 		}
 
-		if (!storeId) {
+		if (!storeId || !membership) {
 			if (pathname !== '/sheet') {
 				router.replace('/sheet');
 			}
 			return;
 		}
 
-		if (!storeRole) {
-			if (pathname !== '/sheet') {
-				router.replace('/sheet');
-			}
-			return;
-		}
-
-		if (required === 'manager' && storeRole !== 'manager') {
+		if (required === 'manager' && !membership.permissions.manageTemplates) {
 			if (pathname !== '/sheet') {
 				router.replace('/sheet');
 			}
 		}
-	}, [isLoading, isStoreRoleLoading, pathname, required, router, session, storeId, storeRole]);
+	}, [isLoading, isMembershipLoading, membership, pathname, required, router, session, storeId]);
 
 	return {
-		storeRole,
-		isStoreRoleLoading,
+		storeRole: membership?.roleSlug ?? null,
+		storeMembership: membership ?? null,
+		isStoreRoleLoading: isMembershipLoading,
+	};
+}
+
+export function useRequireStorePermission(
+	storeId: string | null,
+	requiredPermission: StoreRolePermissionKey
+) {
+	const { session, user, isLoading } = useAuth();
+	const pathname = usePathname();
+	const router = useRouter();
+	const { data: membership, isLoading: isMembershipLoading } = useStoreMembership(
+		storeId,
+		user?.id ?? null
+	);
+
+	useEffect(() => {
+		if (isLoading || isMembershipLoading) return;
+
+		if (!session) {
+			if (pathname !== '/login') {
+				router.replace('/login');
+			}
+			return;
+		}
+
+		if (!storeId || !membership || !hasPermission(membership.permissions, requiredPermission)) {
+			if (pathname !== '/sheet') {
+				router.replace('/sheet');
+			}
+		}
+	}, [
+		isLoading,
+		isMembershipLoading,
+		membership,
+		pathname,
+		requiredPermission,
+		router,
+		session,
+		storeId,
+	]);
+
+	return {
+		storeMembership: membership ?? null,
+		isStorePermissionLoading: isMembershipLoading,
 	};
 }

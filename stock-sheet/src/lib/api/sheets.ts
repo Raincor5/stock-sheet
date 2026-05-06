@@ -6,7 +6,7 @@
 import { supabase } from '@/lib/auth/client';
 import type { Database } from '@/types/supabase';
 
-type SheetRow = Database['public']['Tables']['stock_sheets']['Row'];
+type SheetRow = Database['public']['Tables']['sheet_instances']['Row'];
 type SheetEntryRow = Database['public']['Tables']['sheet_entries']['Row'];
 type SheetEntryInsert = Database['public']['Tables']['sheet_entries']['Insert'];
 type SheetEntryUpdate = Database['public']['Tables']['sheet_entries']['Update'];
@@ -51,7 +51,7 @@ export async function fetchSheetForDate(
   date: string
 ): Promise<SheetWithEntries | null> {
   const { data, error } = await supabase
-    .from('stock_sheets')
+    .from('sheet_instances')
     .select(SHEET_WITH_ENTRIES_SELECT)
     .eq('store_id', storeId)
     .eq('date', date)
@@ -80,7 +80,7 @@ export async function createSheet(
   date: string = getTodayDateString()
 ): Promise<SheetWithEntries> {
   const { data: created, error: createError } = await supabase
-    .from('stock_sheets')
+    .from('sheet_instances')
     .insert([
       {
         store_id: storeId,
@@ -119,7 +119,7 @@ export async function fetchSheetHistory(
   endDate: string
 ): Promise<SheetRow[]> {
   const { data, error } = await supabase
-    .from('stock_sheets')
+    .from('sheet_instances')
     .select('*')
     .eq('store_id', storeId)
     .gte('date', startDate)
@@ -185,7 +185,7 @@ export async function batchSaveEntries(entries: SheetEntryInsert[]): Promise<She
  */
 export async function lockSheet(sheetId: string): Promise<SheetRow> {
   const { data, error } = await supabase
-    .from('stock_sheets')
+    .from('sheet_instances')
     .update({ is_locked: true })
     .eq('id', sheetId)
     .select()
@@ -204,7 +204,7 @@ export async function lockSheet(sheetId: string): Promise<SheetRow> {
  */
 export async function unlockSheet(sheetId: string): Promise<SheetRow> {
   const { data, error } = await supabase
-    .from('stock_sheets')
+    .from('sheet_instances')
     .update({ is_locked: false })
     .eq('id', sheetId)
     .select()
@@ -223,7 +223,7 @@ export async function unlockSheet(sheetId: string): Promise<SheetRow> {
  */
 export async function archiveSheet(sheetId: string): Promise<SheetRow> {
   const { data, error } = await supabase
-    .from('stock_sheets')
+    .from('sheet_instances')
     .update({ archived_at: new Date().toISOString() })
     .eq('id', sheetId)
     .select()
@@ -242,7 +242,7 @@ export async function archiveSheet(sheetId: string): Promise<SheetRow> {
  */
 export async function restoreSheet(sheetId: string): Promise<SheetRow> {
   const { data, error } = await supabase
-    .from('stock_sheets')
+    .from('sheet_instances')
     .update({ archived_at: null })
     .eq('id', sheetId)
     .select()

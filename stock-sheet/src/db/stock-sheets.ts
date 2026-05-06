@@ -1,9 +1,9 @@
 import { supabase } from './client';
 import type { Database } from '../types/supabase';
 
-type StockSheet = Database['public']['Tables']['stock_sheets']['Row'];
-type StockSheetInsert = Database['public']['Tables']['stock_sheets']['Insert'];
-type StockSheetUpdate = Database['public']['Tables']['stock_sheets']['Update'];
+type StockSheet = Database['public']['Tables']['sheet_instances']['Row'];
+type StockSheetInsert = Database['public']['Tables']['sheet_instances']['Insert'];
+type StockSheetUpdate = Database['public']['Tables']['sheet_instances']['Update'];
 
 /**
  * Get stock sheets for a store, optionally filtered by date range
@@ -17,7 +17,7 @@ export async function getStockSheets(
   }
 ): Promise<StockSheet[]> {
   let query = supabase
-    .from('stock_sheets')
+    .from('sheet_instances')
     .select('*')
     .eq('store_id', storeId);
 
@@ -46,7 +46,7 @@ export async function getStockSheets(
  */
 export async function getStockSheetById(sheetId: string): Promise<StockSheet | null> {
   const { data, error } = await supabase
-    .from('stock_sheets')
+    .from('sheet_instances')
     .select('*')
     .eq('id', sheetId)
     .single();
@@ -66,7 +66,7 @@ export async function getTodayStockSheet(
 
   // Try to find existing sheet for today
   const { data: existing, error: selectError } = await supabase
-    .from('stock_sheets')
+    .from('sheet_instances')
     .select('*')
     .eq('store_id', storeId)
     .eq('date', today)
@@ -83,7 +83,7 @@ export async function getTodayStockSheet(
 
   // Create new sheet for today
   const { data: created, error: insertError } = await supabase
-    .from('stock_sheets')
+    .from('sheet_instances')
     .insert([
       {
         store_id: storeId,
@@ -106,7 +106,7 @@ export async function createStockSheet(
   sheet: StockSheetInsert
 ): Promise<StockSheet> {
   const { data, error } = await supabase
-    .from('stock_sheets')
+    .from('sheet_instances')
     .insert([sheet])
     .select()
     .single();
@@ -123,7 +123,7 @@ export async function updateStockSheet(
   updates: StockSheetUpdate
 ): Promise<StockSheet> {
   const { data, error } = await supabase
-    .from('stock_sheets')
+    .from('sheet_instances')
     .update(updates)
     .eq('id', sheetId)
     .select()

@@ -5,13 +5,21 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/context/AuthContext';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { useMyStores, useUserRoleInStore } from '@/hooks/useStores';
+import {
+	useMyStores,
+	useStoreMembership,
+	useTemplateRoleOverrides,
+} from '@/hooks/useStores';
 import { useSheetTemplates } from '@/hooks/useSheet';
 import { getStockSheets } from '@/db/stock-sheets';
 import { getUsableTemplates } from '@/lib/api/sheetTemplates';
+import {
+	filterSheetsByPermission,
+	filterTemplatesByPermission,
+} from '@/lib/documentAccess';
 import type { Database } from '@/types/supabase';
 
-type StockSheet = Database['public']['Tables']['stock_sheets']['Row'];
+type StockSheet = Database['public']['Tables']['sheet_instances']['Row'];
 
 export default function SheetScreen() {
 	useRequireRole('staff');
@@ -22,8 +30,15 @@ export default function SheetScreen() {
 	const [sheets, setSheets] = useState<StockSheet[]>([]);
 	const [sheetsLoading, setSheetsLoading] = useState(false);
 	const [selectedStoreId, setSelectedStoreId] = useState<string | null>(storeId || null);
-	const { data: selectedStoreRole } = useUserRoleInStore(selectedStoreId, user?.id ?? null);
+	const {
+		data: selectedStoreMembership,
+		isLoading: isMembershipLoading,
+	} = useStoreMembership(selectedStoreId, user?.id ?? null);
 	const { data: templates, isLoading: templatesLoading } = useSheetTemplates(selectedStoreId);
+	const {
+		data: templateOverrides,
+		isLoading: overridesLoading,
+	} = useTemplateRoleOverrides(selectedStoreId);
 	const isFocused = useIsFocused();
 
 	const handleLogout = async () => {
@@ -31,7 +46,7 @@ export default function SheetScreen() {
 		router.replace('/login');
 	};
 
-	const goToStores = () => {
+	const goToAdmin = () => {
 		router.push('/stores');
 	};
 
@@ -77,9 +92,31 @@ export default function SheetScreen() {
 	}, [selectedStoreId, stores, storeId]);
 
 	const canOpenSheet = Boolean(selectedStoreId);
-	const isSelectedStoreManager = selectedStoreRole === 'manager';
-	const displayedRole = selectedStoreRole ?? role ?? 'No store access yet';
 	const usableTemplates = useMemo(() => getUsableTemplates(templates), [templates]);
+	const creatableTemplates = useMemo(
+		() =>
+			filterTemplatesByPermission(
+				usableTemplates,
+				selectedStoreMembership ?? null,
+				templateOverrides ?? [],
+				'createDocuments'
+			),
+		[selectedStoreMembership, templateOverrides, usableTemplates]
+	);
+	const viewableSheets = useMemo(
+		() =>
+			filterSheetsByPermission(
+				sheets,
+				selectedStoreMembership ?? null,
+				templateOverrides ?? [],
+				'viewDocuments'
+			),
+		[selectedStoreMembership, sheets, templateOverrides]
+	);
+	const canManageTemplates = Boolean(selectedStoreMembership?.permissions.manageTemplates);
+	const isPermissionContextLoading = isMembershipLoading || overridesLoading;
+	const displayedRole =
+		selectedStoreMembership?.store_role?.name ?? role ?? 'No store access yet';
 	const templateNameById = useMemo(
 		() =>
 			new Map((templates ?? []).map((template) => [template.id, template.name || 'Unnamed Template'])),
@@ -125,7 +162,7 @@ export default function SheetScreen() {
 								<Text style={styles.storeName}>{item.name}</Text>
 								<Text style={styles.storeSubtext}>
 									{selectedStoreId === item.id
-										? `${sheets.length} recent sheet${sheets.length !== 1 ? 's' : ''}`
+										? `${viewableSheets.length} recent sheet${viewableSheets.length !== 1 ? 's' : ''}`
 										: 'Tap to load this store'}
 								</Text>
 							</TouchableOpacity>
@@ -148,7 +185,7 @@ export default function SheetScreen() {
 							<Text style={styles.statusBody}>
 								{usableTemplates.length > 0
 									? 'Create as many sheet instances as you need from any template, including stock counts, temperature checks, and other recurring forms.'
-									: 'Managers can create reusable templates from a photo, then staff can create fresh sheet instances from them whenever needed.'}
+									: 'People with template-management access can create reusable templates from a photo, then employees can create fresh sheet instances from them whenever needed.'}
 							</Text>
 						</View>
 					</View>
@@ -160,8 +197,8 @@ export default function SheetScreen() {
 
 						{sheetsLoading ? (
 							<ActivityIndicator size="small" color="#007AFF" />
-						) : sheets.length > 0 ? (
-							sheets.map((item) => (
+						) : viewableSheets.length > 0 ? (
+							viewableSheets.map((item) => (
 								<TouchableOpacity
 									key={item.id}
 									style={styles.sheetCard}
@@ -189,7 +226,11 @@ export default function SheetScreen() {
 								</TouchableOpacity>
 							))
 						) : (
-							<Text style={styles.empty}>No sheets yet for this period</Text>
+							<Text style={styles.empty}>
+								{sheets.length > 0
+									? 'No recent sheets are visible to your role.'
+									: 'No sheets yet for this period'}
+							</Text>
 						)}
 					</View>
 				)}
@@ -198,23 +239,35 @@ export default function SheetScreen() {
 					{session && (
 						<TouchableOpacity
 							style={styles.createButton}
-							onPress={goToStores}
+							onPress={goToAdmin}
 							accessibilityRole="button"
-							accessibilityLabel="Add a new store"
+							accessibilityLabel="Open the admin panel"
 						>
-							<Text style={styles.createButtonText}>Add Store</Text>
+							<Text style={styles.createButtonText}>Admin Panel</Text>
 						</TouchableOpacity>
 					)}
 
 					{session && (
 						<TouchableOpacity
-							style={[styles.secondaryButton, !canOpenSheet && styles.buttonDisabled]}
+							style={[
+								styles.secondaryButton,
+								(!canOpenSheet ||
+									isPermissionContextLoading ||
+									creatableTemplates.length === 0) &&
+									styles.buttonDisabled,
+							]}
 							onPress={goToCreateSheet}
-							disabled={!canOpenSheet}
+							disabled={
+								!canOpenSheet ||
+								isPermissionContextLoading ||
+								creatableTemplates.length === 0
+							}
 							accessibilityRole="button"
 							accessibilityLabel="Choose a template and create a new sheet"
 						>
-							<Text style={styles.secondaryButtonText}>Create Sheet</Text>
+							<Text style={styles.secondaryButtonText}>
+								{isPermissionContextLoading ? 'Loading Access…' : 'Create Sheet'}
+							</Text>
 						</TouchableOpacity>
 					)}
 				</View>
@@ -227,7 +280,9 @@ export default function SheetScreen() {
 						</Text>
 						{templatesLoading ? (
 							<ActivityIndicator size="small" color="#007AFF" style={styles.templateLoader} />
-						) : isSelectedStoreManager ? (
+						) : isPermissionContextLoading ? (
+							<ActivityIndicator size="small" color="#007AFF" style={styles.templateLoader} />
+						) : canManageTemplates ? (
 							<TouchableOpacity
 								style={styles.scanButton}
 								onPress={goToScanTemplate}
@@ -240,7 +295,7 @@ export default function SheetScreen() {
 							</TouchableOpacity>
 						) : (
 							<Text style={styles.templateHelper}>
-								A store manager can create or update this template from a photo.
+								Someone with template-management access can create or update templates from a photo.
 							</Text>
 						)}
 					</View>

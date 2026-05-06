@@ -118,47 +118,12 @@ export type Database = {
             foreignKeyName: "sheet_entries_sheet_id_fkey"
             columns: ["sheet_id"]
             isOneToOne: false
-            referencedRelation: "stock_sheets"
+            referencedRelation: "sheet_instances"
             referencedColumns: ["id"]
           },
         ]
       }
-      sheet_templates: {
-        Row: {
-          columns: Json
-          created_at: string
-          id: string
-          name: string
-          store_id: string
-          updated_at: string
-        }
-        Insert: {
-          columns?: Json
-          created_at?: string
-          id?: string
-          name: string
-          store_id: string
-          updated_at?: string
-        }
-        Update: {
-          columns?: Json
-          created_at?: string
-          id?: string
-          name?: string
-          store_id?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sheet_templates_store_id_fkey"
-            columns: ["store_id"]
-            isOneToOne: false
-            referencedRelation: "stores"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      stock_sheets: {
+      sheet_instances: {
         Row: {
           archived_at: string | null
           created_at: string
@@ -206,11 +171,140 @@ export type Database = {
           },
         ]
       }
+      sheet_template_role_overrides: {
+        Row: {
+          created_at: string
+          id: string
+          permissions: Json
+          sheet_template_id: string
+          store_role_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          permissions?: Json
+          sheet_template_id: string
+          store_role_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          permissions?: Json
+          sheet_template_id?: string
+          store_role_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sheet_template_role_overrides_sheet_template_id_fkey"
+            columns: ["sheet_template_id"]
+            isOneToOne: false
+            referencedRelation: "sheet_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sheet_template_role_overrides_store_role_id_fkey"
+            columns: ["store_role_id"]
+            isOneToOne: false
+            referencedRelation: "store_roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sheet_templates: {
+        Row: {
+          columns: Json
+          created_at: string
+          id: string
+          name: string
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          columns?: Json
+          created_at?: string
+          id?: string
+          name: string
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          columns?: Json
+          created_at?: string
+          id?: string
+          name?: string
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sheet_templates_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      store_invites: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          invited_by_user_id: string
+          responded_at: string | null
+          role_id: string
+          status: string
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          invited_by_user_id: string
+          responded_at?: string | null
+          role_id: string
+          status?: string
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          invited_by_user_id?: string
+          responded_at?: string | null
+          role_id?: string
+          status?: string
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_invites_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "store_roles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "store_invites_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       store_members: {
         Row: {
           created_at: string
           id: string
-          role: string
+          member_email: string
+          role_id: string
           store_id: string
           updated_at: string
           user_id: string
@@ -218,7 +312,8 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
-          role: string
+          member_email: string
+          role_id: string
           store_id: string
           updated_at?: string
           user_id: string
@@ -226,14 +321,63 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
-          role?: string
+          member_email?: string
+          role_id?: string
           store_id?: string
           updated_at?: string
           user_id?: string
         }
         Relationships: [
           {
+            foreignKeyName: "store_members_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "store_roles"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "store_members_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      store_roles: {
+        Row: {
+          created_at: string
+          id: string
+          is_system: boolean
+          name: string
+          permissions: Json
+          slug: string
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_system?: boolean
+          name: string
+          permissions?: Json
+          slug: string
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_system?: boolean
+          name?: string
+          permissions?: Json
+          slug?: string
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_roles_store_id_fkey"
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores"
@@ -267,7 +411,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      default_store_role_permissions: {
+        Args: { target_slug: string }
+        Returns: Json
+      }
+      seed_default_store_roles: {
+        Args: { target_store_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

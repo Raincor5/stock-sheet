@@ -10,7 +10,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/context/AuthContext';
-import { useUserRoleInStore } from '@/hooks/useStores';
+import { useStoreMembership, useTemplateRoleOverrides } from '@/hooks/useStores';
 import { useCreateSheet, useSheetTemplates } from '@/hooks/useSheet';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import {
@@ -18,6 +18,7 @@ import {
 	getUsableTemplates,
 	type TemplateColumn,
 } from '@/lib/api/sheetTemplates';
+import { filterTemplatesByPermission } from '@/lib/documentAccess';
 import type { Database } from '@/types/supabase';
 
 type SheetTemplate = Database['public']['Tables']['sheet_templates']['Row'];
@@ -29,15 +30,33 @@ export default function CreateSheetScreen() {
 	const { storeId: storeIdParam } = useLocalSearchParams<{ storeId?: string }>();
 	const router = useRouter();
 	const activeStoreId = typeof storeIdParam === 'string' ? storeIdParam : authStoreId;
-	const { data: activeStoreRole } = useUserRoleInStore(activeStoreId, user?.id ?? null);
+	const {
+		data: activeStoreMembership,
+		isLoading: isMembershipLoading,
+	} = useStoreMembership(activeStoreId, user?.id ?? null);
 	const { data: templates, isLoading: templatesLoading } = useSheetTemplates(activeStoreId);
+	const {
+		data: templateOverrides,
+		isLoading: isOverridesLoading,
+	} = useTemplateRoleOverrides(activeStoreId);
 	const createSheet = useCreateSheet();
-	const isManagerForStore = activeStoreRole === 'manager';
+	const canManageTemplates = Boolean(activeStoreMembership?.permissions.manageTemplates);
+	const isPermissionContextLoading = isMembershipLoading || isOverridesLoading;
 
 	const usableTemplates = useMemo(() => getUsableTemplates(templates), [templates]);
+	const creatableTemplates = useMemo(
+		() =>
+			filterTemplatesByPermission(
+				usableTemplates,
+				activeStoreMembership ?? null,
+				templateOverrides ?? [],
+				'createDocuments'
+			),
+		[activeStoreMembership, templateOverrides, usableTemplates]
+	);
 
 	const goToTemplateScan = (template?: SheetTemplate) => {
-		if (!activeStoreId || !isManagerForStore) return;
+		if (!activeStoreId || !canManageTemplates) return;
 
 		router.push({
 			pathname: '/sheet-scan',
@@ -95,7 +114,7 @@ export default function CreateSheetScreen() {
 						)}
 					</TouchableOpacity>
 
-					{isManagerForStore ? (
+					{canManageTemplates ? (
 						<TouchableOpacity
 							style={styles.secondaryButton}
 							onPress={() => goToTemplateScan(template)}
@@ -118,7 +137,7 @@ export default function CreateSheetScreen() {
 
 				{!activeStoreId ? (
 					<Text style={styles.notice}>Create or join a store first.</Text>
-				) : templatesLoading ? (
+				) : templatesLoading || isPermissionContextLoading ? (
 					<ActivityIndicator size="large" color="#007AFF" style={styles.loader} />
 				) : usableTemplates.length === 0 ? (
 					<>
@@ -128,7 +147,7 @@ export default function CreateSheetScreen() {
 						<Text style={styles.helperText}>
 							Templates can represent stock counts, temperature checks, cleaning logs, or any other repeatable sheet type.
 						</Text>
-						{isManagerForStore ? (
+						{canManageTemplates ? (
 							<TouchableOpacity
 								style={styles.secondaryButton}
 								onPress={() => goToTemplateScan()}
@@ -137,18 +156,32 @@ export default function CreateSheetScreen() {
 							</TouchableOpacity>
 						) : (
 							<Text style={styles.helperText}>
-								A store manager needs to create a reusable template before staff can create sheets from it.
+								Someone with template-management access needs to create a reusable template before you can create sheets from it.
 							</Text>
 						)}
+					</>
+				) : creatableTemplates.length === 0 ? (
+					<>
+						<Text style={styles.notice}>
+							Templates exist for this store, but your role is not allowed to create documents from them yet.
+						</Text>
+						{canManageTemplates ? (
+							<TouchableOpacity
+								style={styles.secondaryButton}
+								onPress={() => goToTemplateScan()}
+							>
+								<Text style={styles.secondaryButtonText}>Create Template From Photo</Text>
+							</TouchableOpacity>
+						) : null}
 					</>
 				) : (
 					<>
 						<View style={styles.section}>
 							<Text style={styles.sectionTitle}>Reusable Templates</Text>
-							{usableTemplates.map(renderTemplateCard)}
+							{creatableTemplates.map(renderTemplateCard)}
 						</View>
 
-						{isManagerForStore ? (
+						{canManageTemplates ? (
 							<View style={styles.section}>
 								<Text style={styles.sectionTitle}>New Template</Text>
 								<TouchableOpacity
